@@ -5,7 +5,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { getAllProducts, addProduct, deleteProduct, updateProduct, restockProduct } from '../database/db';
+import { getAllProducts, addProduct, deleteProduct, updateProduct, restockProduct, getCategories } from '../database/db';
+
+const LOW_STOCK_THRESHOLD = 5;
 
 export default function ProductsScreen() {
   const [products, setProducts]     = useState([]);
@@ -15,6 +17,9 @@ export default function ProductsScreen() {
     name: '', barcode: '', price: '', stock: '', category: ''
   });
 
+  const [selectedCategory, setCategory] = useState('All');
+  const [categories, setCategories]     = useState([]);
+
   const [editModal, setEditModal]   = useState(false);
   const [editForm, setEditForm]     = useState({ id: '', name: '', price: '', category: '' });
   const [restockModal, setRestock]  = useState(false);
@@ -23,15 +28,18 @@ export default function ProductsScreen() {
   const loadProducts = () => {
     const data = getAllProducts();
     setProducts(data);
+    const cats = getCategories();
+    setCategories([{ category: 'All' }, ...cats]);
   };
 
   useFocusEffect(useCallback(() => { loadProducts(); }, []));
 
-  const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.barcode.includes(search)
-  );
-
+ const filtered = products.filter(p => {
+    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
+                        p.barcode.includes(search);
+    const matchCategory = selectedCategory === 'All' || p.category === selectedCategory;
+    return matchSearch && matchCategory;
+ });
   const handleAdd = () => {
     const { name, barcode, price, stock, category } = form;
     if (!name || !barcode || !price || !stock) {
@@ -109,6 +117,37 @@ export default function ProductsScreen() {
           onChangeText={setSearch}
         />
       </View>
+
+    {categories.length > 1 && (
+    <View style={{ height: 44, marginBottom: 10 }}>
+        <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 8 }}
+        >
+        {categories.map(c => (
+            <TouchableOpacity
+            key={c.category}
+            style={[styles.catChip, selectedCategory === c.category && styles.catChipActive]}
+            onPress={() => setCategory(c.category)}
+            >
+            <Text style={[styles.catChipText, selectedCategory === c.category && styles.catChipTextActive]}>
+                {c.category}
+            </Text>
+            </TouchableOpacity>
+        ))}
+        </ScrollView>
+    </View>
+    )}
+
+    {products.filter(p => p.stock <= LOW_STOCK_THRESHOLD).length > 0 && (
+        <View style={styles.lowStockBanner}>
+            <Ionicons name="warning-outline" size={18} color="#92400E" />
+            <Text style={styles.lowStockBannerText}>
+            {products.filter(p => p.stock <= LOW_STOCK_THRESHOLD).length} product(s) are low on stock
+            </Text>
+        </View>
+    )}
 
       {/* Product List */}
       <FlatList
@@ -193,36 +232,36 @@ export default function ProductsScreen() {
       </Modal>
 
       {/* Edit Product Modal */}
-<Modal visible={editModal} animationType="slide" transparent>
-  <View style={styles.modalOverlay}>
-    <View style={styles.modalBox}>
-      <Text style={styles.modalTitle}>Edit Product</Text>
-      {[
-        { key: 'name',     label: 'Product Name *', keyboard: 'default' },
-        { key: 'price',    label: 'Price *',         keyboard: 'decimal-pad' },
-        { key: 'category', label: 'Category',        keyboard: 'default' },
-      ].map(field => (
-        <View key={field.key} style={styles.fieldGroup}>
-          <Text style={styles.label}>{field.label}</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType={field.keyboard}
-            value={editForm[field.key]}
-            onChangeText={v => setEditForm(prev => ({ ...prev, [field.key]: v }))}
-          />
+    <Modal visible={editModal} animationType="slide" transparent>
+    <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+        <Text style={styles.modalTitle}>Edit Product</Text>
+        {[
+            { key: 'name',     label: 'Product Name *', keyboard: 'default' },
+            { key: 'price',    label: 'Price *',         keyboard: 'decimal-pad' },
+            { key: 'category', label: 'Category',        keyboard: 'default' },
+        ].map(field => (
+            <View key={field.key} style={styles.fieldGroup}>
+            <Text style={styles.label}>{field.label}</Text>
+            <TextInput
+                style={styles.input}
+                keyboardType={field.keyboard}
+                value={editForm[field.key]}
+                onChangeText={v => setEditForm(prev => ({ ...prev, [field.key]: v }))}
+            />
+            </View>
+        ))}
+        <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.btnCancel} onPress={() => setEditModal(false)}>
+            <Text style={styles.btnCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnSave} onPress={handleEdit}>
+            <Text style={styles.btnSaveText}>Save Changes</Text>
+            </TouchableOpacity>
         </View>
-      ))}
-      <View style={styles.modalButtons}>
-        <TouchableOpacity style={styles.btnCancel} onPress={() => setEditModal(false)}>
-          <Text style={styles.btnCancelText}>Cancel</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnSave} onPress={handleEdit}>
-          <Text style={styles.btnSaveText}>Save Changes</Text>
-        </TouchableOpacity>
-      </View>
+        </View>
     </View>
-  </View>
-</Modal>
+    </Modal>
 
     {/* Restock Modal */}
     <Modal visible={restockModal} animationType="fade" transparent>
@@ -301,4 +340,13 @@ const styles = StyleSheet.create({
                      paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
  restockBtnText:    { fontSize: 12, color: '#16A34A', fontWeight: '600' },
  restockProductName:{ fontSize: 15, fontWeight: '600', color: '#1E293B', marginBottom: 16 },
+ lowStockBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8,
+                      backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12,
+                      marginBottom: 12, borderWidth: 1, borderColor: '#FCD34D' },
+ lowStockBannerText: { fontSize: 13, color: '#92400E', fontWeight: '600', flex: 1 },
+catChip: { paddingHorizontal: 16, height: 34, borderRadius: 8, backgroundColor: '#fff',
+           borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' },
+ catChipActive:    { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+ catChipText:      { fontSize: 13, color: '#64748B', fontWeight: '500' },
+ catChipTextActive:{ color: '#fff', fontWeight: '600' },
 });

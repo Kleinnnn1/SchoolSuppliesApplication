@@ -163,4 +163,24 @@ export const restockProduct = (id, addQty) => {
   );
 };
 
+export const getCategories = () => {
+  return db.getAllSync(
+    `SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category != '' ORDER BY category ASC`
+  );
+};
+
+export const getSaleItems = (saleId) => {
+  return db.getAllSync(`
+    SELECT
+      si.quantity,
+      si.price_at_sale,
+      si.quantity * si.price_at_sale as subtotal,
+      p.name,
+      p.barcode
+    FROM sale_items si
+    JOIN products p ON si.product_id = p.id
+    WHERE si.sale_id = ?
+  `, [saleId]);
+};
+
 export default db;

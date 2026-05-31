@@ -10,19 +10,27 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.yourname.schoolsupplies",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      "expo-sqlite",
-      "expo-barcode-scanner"
-    ]
+    "plugins": ["expo-sqlite", "expo-sharing"],
+    "extra": {
+      "eas": {
+        "projectId": "cf55e8a3-009a-4c28-8cd6-05b7a0fc1dca"
+      }
+    }
   }
 }
