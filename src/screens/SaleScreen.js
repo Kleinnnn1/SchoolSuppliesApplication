@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { getProductByBarcode, createSale } from '../database/db';
+import { getProductByBarcode, createSale, getAllProducts } from '../database/db';
 
 export default function SaleScreen() {
   const [cart, setCart]                 = useState([]);
@@ -15,13 +15,18 @@ export default function SaleScreen() {
   const [manualVisible, setManualModal] = useState(false);
   const [scanned, setScanned]           = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const [allProducts, setAllProducts]   = useState([]);
+  const [suggestions, setSuggestions]   = useState([]);
 
   useFocusEffect(useCallback(() => {
     setCart([]);
+    setAllProducts(getAllProducts());
   }, []));
 
   const addToCart = (barcode) => {
-    const product = getProductByBarcode(barcode);
+      console.log('Looking up barcode:', barcode);
+      const product = getProductByBarcode(barcode);
+      console.log('Found product:', JSON.stringify(product));
     if (!product) {
       Alert.alert('Not Found', 'No product with that barcode.');
       return;
@@ -57,14 +62,37 @@ export default function SaleScreen() {
     if (scanned) return;
     setScanned(true);
     setScanner(false);
+    console.log('Scanned barcode:', data);
     addToCart(data);
     setTimeout(() => setScanned(false), 1000);
+  };
+
+  const handleManualSearch = (text) => {
+    setManual(text);
+    if (text.trim().length === 0) {
+      setSuggestions([]);
+      return;
+    }
+    const lower = text.toLowerCase();
+    const matches = allProducts.filter(p =>
+      p.name.toLowerCase().includes(lower) ||
+      p.barcode.includes(text)
+    ).slice(0, 5);
+    setSuggestions(matches);
+  };
+
+  const handleSelectSuggestion = (product) => {
+    addToCart(product.barcode);
+    setManual('');
+    setSuggestions([]);
+    setManualModal(false);
   };
 
   const handleManualAdd = () => {
     if (!manualBarcode.trim()) return;
     addToCart(manualBarcode.trim());
     setManual('');
+    setSuggestions([]);
     setManualModal(false);
   };
 
@@ -174,49 +202,74 @@ export default function SaleScreen() {
         </View>
       )}
 
-        <Modal visible={scannerVisible} animationType="slide">
+      {/* Barcode Scanner Modal */}
+      <Modal visible={scannerVisible} animationType="slide">
         <View style={{ flex: 1 }}>
-            <CameraView
+          <CameraView
             style={{ flex: 1 }}
             facing="back"
             onBarcodeScanned={scanned ? undefined : handleScan}
             barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'qr', 'code128', 'code39', 'upc_a'] }}
-            />
-            <TouchableOpacity
+          />
+          <TouchableOpacity
             onPress={() => setScanner(false)}
             style={{ position: 'absolute', top: 50, right: 20 }}>
             <Ionicons name="close-circle" size={44} color="#fff" />
-            </TouchableOpacity>
-            <View style={{
+          </TouchableOpacity>
+          <View style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
             justifyContent: 'center', alignItems: 'center', pointerEvents: 'none'
-            }}>
+          }}>
             <View style={{
-                width: 260, height: 160, borderWidth: 2,
-                borderColor: '#2563EB', borderRadius: 12
+              width: 260, height: 160, borderWidth: 2,
+              borderColor: '#2563EB', borderRadius: 12
             }} />
             <Text style={{ color: '#fff', marginTop: 16, fontSize: 14 }}>
-                Point camera at barcode
+              Point camera at barcode
             </Text>
-            </View>
+          </View>
         </View>
-        </Modal>
+      </Modal>
 
-      {/* Manual Barcode Modal */}
+      {/* Manual Search Modal */}
       <Modal visible={manualVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Enter Barcode</Text>
+            <Text style={styles.modalTitle}>Search Product</Text>
             <TextInput
               style={styles.input}
-              placeholder="Type barcode number..."
+              placeholder="Type name or barcode..."
               value={manualBarcode}
-              onChangeText={setManual}
+              onChangeText={handleManualSearch}
               keyboardType="default"
               autoFocus
             />
+
+            {/* Suggestions */}
+            {suggestions.length > 0 && (
+              <View style={styles.suggestionsBox}>
+                {suggestions.map(p => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={styles.suggestionItem}
+                    onPress={() => handleSelectSuggestion(p)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.suggestionName}>{p.name}</Text>
+                      <Text style={styles.suggestionSub}>{p.barcode} · Stock: {p.stock}</Text>
+                    </View>
+                    <Text style={styles.suggestionPrice}>₱{parseFloat(p.price).toFixed(2)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.btnCancel} onPress={() => setManualModal(false)}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => {
+                setManualModal(false);
+                setManual('');
+                setSuggestions([]);
+              }}>
                 <Text style={styles.btnCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnSave} onPress={handleManualAdd}>
@@ -232,50 +285,52 @@ export default function SaleScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#F8FAFC', padding: 16 },
-  actionRow:      { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  scanBtn:        { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: '#2563EB', padding: 14, borderRadius: 12, gap: 8 },
-  scanBtnText:    { color: '#fff', fontWeight: '600', fontSize: 15 },
-  manualBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: '#EFF6FF', padding: 14, borderRadius: 12, gap: 8,
-                    borderWidth: 1, borderColor: '#BFDBFE' },
-  manualBtnText:  { color: '#2563EB', fontWeight: '600', fontSize: 15 },
-  cartItem:       { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10,
-                    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
-  cartLeft:       { flex: 1 },
-  itemName:       { fontSize: 15, fontWeight: '600', color: '#1E293B' },
-  itemPrice:      { fontSize: 12, color: '#94A3B8', marginTop: 2 },
-  qtyRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 12 },
-  qtyBtn:         { backgroundColor: '#EFF6FF', borderRadius: 6, padding: 4 },
-  qtyText:        { fontSize: 16, fontWeight: '600', color: '#1E293B', minWidth: 20, textAlign: 'center' },
-  itemTotal:      { fontSize: 15, fontWeight: '700', color: '#2563EB', minWidth: 70, textAlign: 'right' },
-  empty:          { alignItems: 'center', marginTop: 80 },
-  emptyText:      { color: '#ccc', marginTop: 8, fontSize: 16, fontWeight: '600' },
-  emptyHint:      { color: '#ddd', marginTop: 4, fontSize: 13 },
-  checkoutBar:    { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff',
-                    padding: 20, flexDirection: 'row', justifyContent: 'space-between',
-                    alignItems: 'center', borderTopWidth: 1, borderColor: '#E2E8F0', elevation: 8 },
-  totalLabel:     { fontSize: 13, color: '#94A3B8' },
-  totalAmount:    { fontSize: 22, fontWeight: '700', color: '#1E293B' },
-  checkoutBtn:    { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2563EB',
-                    paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12, gap: 8 },
-  checkoutText:   { color: '#fff', fontWeight: '700', fontSize: 16 },
-  scannerContainer: { flex: 1 },
-  scannerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent' },
-  scannerFrame:   { width: 250, height: 180, borderWidth: 2, borderColor: '#2563EB', borderRadius: 12 },
-  scannerHint:    { color: '#fff', marginTop: 16, fontSize: 14 },
-  closeScannerBtn:{ position: 'absolute', top: 50, right: 20 },
-  modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center',
-                    paddingHorizontal: 24 },
-  modalBox:       { backgroundColor: '#fff', borderRadius: 16, padding: 24 },
-  modalTitle:     { fontSize: 18, fontWeight: '700', color: '#1E293B', marginBottom: 16 },
-  input:          { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12,
-                    fontSize: 14, backgroundColor: '#F8FAFC', marginBottom: 8 },
-  modalButtons:   { flexDirection: 'row', gap: 10, marginTop: 8 },
-  btnCancel:      { flex: 1, padding: 14, borderRadius: 10, borderWidth: 1,
-                    borderColor: '#E2E8F0', alignItems: 'center' },
-  btnCancelText:  { color: '#64748B', fontWeight: '600' },
-  btnSave:        { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#2563EB', alignItems: 'center' },
-  btnSaveText:    { color: '#fff', fontWeight: '600' },
+  container:        { flex: 1, backgroundColor: '#F8FAFC', padding: 16 },
+  actionRow:        { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  scanBtn:          { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: '#2563EB', padding: 14, borderRadius: 12, gap: 8 },
+  scanBtnText:      { color: '#fff', fontWeight: '600', fontSize: 15 },
+  manualBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: '#EFF6FF', padding: 14, borderRadius: 12, gap: 8,
+                      borderWidth: 1, borderColor: '#BFDBFE' },
+  manualBtnText:    { color: '#2563EB', fontWeight: '600', fontSize: 15 },
+  cartItem:         { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10,
+                      flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  cartLeft:         { flex: 1 },
+  itemName:         { fontSize: 15, fontWeight: '600', color: '#1E293B' },
+  itemPrice:        { fontSize: 12, color: '#94A3B8', marginTop: 2 },
+  qtyRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 12 },
+  qtyBtn:           { backgroundColor: '#EFF6FF', borderRadius: 6, padding: 4 },
+  qtyText:          { fontSize: 16, fontWeight: '600', color: '#1E293B', minWidth: 20, textAlign: 'center' },
+  itemTotal:        { fontSize: 15, fontWeight: '700', color: '#2563EB', minWidth: 70, textAlign: 'right' },
+  empty:            { alignItems: 'center', marginTop: 80 },
+  emptyText:        { color: '#ccc', marginTop: 8, fontSize: 16, fontWeight: '600' },
+  emptyHint:        { color: '#ddd', marginTop: 4, fontSize: 13 },
+  checkoutBar:      { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff',
+                      padding: 20, flexDirection: 'row', justifyContent: 'space-between',
+                      alignItems: 'center', borderTopWidth: 1, borderColor: '#E2E8F0', elevation: 8 },
+  totalLabel:       { fontSize: 13, color: '#94A3B8' },
+  totalAmount:      { fontSize: 22, fontWeight: '700', color: '#1E293B' },
+  checkoutBtn:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2563EB',
+                      paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12, gap: 8 },
+  checkoutText:     { color: '#fff', fontWeight: '700', fontSize: 16 },
+  modalOverlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center',
+                      paddingHorizontal: 24 },
+  modalBox:         { backgroundColor: '#fff', borderRadius: 16, padding: 24 },
+  modalTitle:       { fontSize: 18, fontWeight: '700', color: '#1E293B', marginBottom: 16 },
+  input:            { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12,
+                      fontSize: 14, backgroundColor: '#F8FAFC', marginBottom: 8 },
+  modalButtons:     { flexDirection: 'row', gap: 10, marginTop: 8 },
+  btnCancel:        { flex: 1, padding: 14, borderRadius: 10, borderWidth: 1,
+                      borderColor: '#E2E8F0', alignItems: 'center' },
+  btnCancelText:    { color: '#64748B', fontWeight: '600' },
+  btnSave:          { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#2563EB', alignItems: 'center' },
+  btnSaveText:      { color: '#fff', fontWeight: '600' },
+  suggestionsBox:   { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8,
+                      marginBottom: 8, overflow: 'hidden' },
+  suggestionItem:   { flexDirection: 'row', alignItems: 'center', padding: 12,
+                      borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#fff' },
+  suggestionName:   { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  suggestionSub:    { fontSize: 11, color: '#94A3B8', marginTop: 2 },
+  suggestionPrice:  { fontSize: 14, fontWeight: '700', color: '#2563EB', marginLeft: 8 },
 });

@@ -1,20 +1,102 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system/legacy';
+import { Alert } from 'react-native';
 
 const formatDate = (dateStr) => new Date(dateStr).toLocaleString();
 
-const sharePDF = async (uri, filename) => {
-  const isAvailable = await Sharing.isAvailableAsync();
-  if (!isAvailable) {
-    throw new Error('Sharing is not available on this device.');
-  }
+const sharePDF = async (uri) => {
   await Sharing.shareAsync(uri, {
     mimeType: 'application/pdf',
     dialogTitle: 'Share PDF',
     UTI: 'com.adobe.pdf',
   });
 };
+
+// ─── Pure-JS CODE128 SVG Generator ────────────────────────────────────────────
+// Generates a complete <svg>...</svg> string without needing any external library.
+
+const CODE128_PATTERNS = {
+  ' ':  '11011001100', '!': '11001101100', '"': '11001100110',
+  '#':  '10010011000', '$': '10010001100', '%': '10001001100',
+  '&':  '10011001000', "'": '10011000100', '(':  '10001100100',
+  ')':  '11001001000', '*': '11001000100', '+': '11000100100',
+  ',':  '10110011100', '-': '10011011100', '.': '10011001110',
+  '/':  '10111001100', '0': '10011101100', '1': '11001110010',
+  '2':  '11001011100', '3': '11001001110', '4': '11011100100',
+  '5':  '11001110100', '6': '11101101110', '7': '11101001100',
+  '8':  '11100101100', '9': '11100100110', ':': '11101100100',
+  ';':  '11100110100', '<': '11100110010', '=': '11011011000',
+  '>':  '11011000110', '?': '11000110110', '@': '10100011000',
+  'A':  '10001011000', 'B': '10001000110', 'C': '10110001000',
+  'D':  '10001101000', 'E': '10001100010', 'F': '11010001000',
+  'G':  '11000101000', 'H': '11000100010', 'I': '10110111000',
+  'J':  '10110001110', 'K': '10001101110', 'L': '10111011000',
+  'M':  '10111000110', 'N': '10001110110', 'O': '11101110110',
+  'P':  '11010001110', 'Q': '11000101110', 'R': '11011101000',
+  'S':  '11011100010', 'T': '11011101110', 'U': '11101011000',
+  'V':  '11101000110', 'W': '11100010110', 'X': '11101101000',
+  'Y':  '11101100010', 'Z': '11100011010', '[': '11101111010',
+  '\\': '11001000010', ']': '11110001010', '^': '10100110000',
+  '_':  '10100001100', '`': '10010110000', 'a': '10010000110',
+  'b':  '10000101100', 'c': '10000100110', 'd': '10110010000',
+  'e':  '10110000100', 'f': '10011010000', 'g': '10011000010',
+  'h':  '10000110100', 'i': '10000110010', 'j': '11000010010',
+  'k':  '11001010000', 'l': '11110111010', 'm': '11000010100',
+  'n':  '10001111010', 'o': '10100111100', 'p': '10010111100',
+  'q':  '10010011110', 'r': '10111100100', 's': '10011110100',
+  't':  '10011110010', 'u': '11110100100', 'v': '11110010100',
+  'w':  '11110010010', 'x': '11011011110', 'y': '11011110110',
+  'z':  '11110110110', '{': '10101111000', '|': '10100011110',
+  '}':  '10001011110',
+  START_B: '11010010000',
+  STOP:    '1100011101011',
+};
+
+// Value→pattern for CODE128B (values 0–95 map to space–DEL then special)
+const CODE128B_VALUES = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
+
+function generateCode128SVG(text, { barWidth = 1.5, barHeight = 60, width = 160, height = 80 } = {}) {
+  // Build pattern string
+  let pattern = CODE128_PATTERNS['START_B'];
+  let checksum = 104; // START_B value
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const val = CODE128B_VALUES.indexOf(ch);
+    if (val === -1) continue;
+    checksum += (i + 1) * val;
+    pattern += CODE128_PATTERNS[ch] || '00000000000';
+  }
+
+  // Checksum character
+  const checksumVal = checksum % 103;
+  const checksumChar = CODE128B_VALUES[checksumVal];
+  pattern += CODE128_PATTERNS[checksumChar] || '00000000000';
+  pattern += CODE128_PATTERNS['STOP'];
+
+  // Calculate total width
+  const totalBars = pattern.length;
+  const totalWidth = totalBars * barWidth;
+  const offsetX = (width - totalWidth) / 2;
+
+  // Build SVG rects
+  let rects = '';
+  let x = offsetX;
+  for (let i = 0; i < pattern.length; i++) {
+    const isBar = pattern[i] === '1';
+    if (isBar) {
+      rects += `<rect x="${x.toFixed(1)}" y="0" width="${barWidth}" height="${barHeight}" fill="#000"/>`;
+    }
+    x += barWidth;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="${width}" height="${height}" fill="white"/>
+    ${rects}
+    <text x="${width / 2}" y="${height - 4}" text-anchor="middle" font-family="monospace" font-size="9" fill="#333">${text}</text>
+  </svg>`;
+}
+// ──────────────────────────────────────────────────────────────────────────────
 
 const htmlStyles = `
   <style>
@@ -194,5 +276,61 @@ export const generateReceiptPDF = async (sale, items) => {
   `;
 
   const { uri } = await Print.printToFileAsync({ html });
-  await sharePDF(uri, 'receipt.pdf');
+  await sharePDF(uri);
+};
+
+export const generateBarcodePDF = async (products) => {
+  // Generate SVGs in JS before building HTML — no JS execution needed in the PDF renderer
+  const barcodeItems = products.map(p => {
+    const svg = generateCode128SVG(p.barcode, { barWidth: 1.5, barHeight: 55, width: 160, height: 70 });
+    return `
+      <div class="barcode-item">
+        ${svg}
+        <p class="product-name">${p.name}</p>
+        <p class="product-price">₱${parseFloat(p.price).toFixed(2)}</p>
+      </div>
+    `;
+  }).join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 16px; }
+        h1 { font-size: 16px; color: #2563EB; margin-bottom: 16px; text-align: center; }
+        .grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-start; }
+        .barcode-item {
+          width: 180px;
+          border: 1px solid #E2E8F0;
+          border-radius: 8px;
+          padding: 10px;
+          text-align: center;
+          page-break-inside: avoid;
+        }
+        .barcode-item svg { display: block; margin: 0 auto; }
+        .product-name {
+          font-size: 11px;
+          font-weight: bold;
+          color: #1E293B;
+          margin-top: 6px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .product-price { font-size: 12px; color: #2563EB; font-weight: bold; margin-top: 2px; }
+      </style>
+    </head>
+    <body>
+      <h1>Product Barcodes — School Supplies Store</h1>
+      <div class="grid">
+        ${barcodeItems}
+      </div>
+    </body>
+    </html>
+  `;
+
+  const { uri } = await Print.printToFileAsync({ html });
+  await sharePDF(uri);
 };
